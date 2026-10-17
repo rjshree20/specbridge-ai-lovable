@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { initialPrdFormValues, type PrdFormValues } from "@/lib/prd-validation";
 import { analyzePrd, InvalidPrdInputError } from "@/lib/prd-analyzer";
+import { B as detailedReset, C as csvExport } from "@/lib/prd-analyzer.fixtures";
 
 const neutralPrd = "This feature supports an internal workflow for reviewing structured requirements and documenting intended product behavior for delivery.";
 
@@ -139,5 +140,44 @@ describe("deterministic PRD analysis", () => {
     const complete = validInput({ prdContent: "If the account is locked, then show a message and block sign-in." });
     expect(rulesFor(incomplete)).toContain("R003");
     expect(rulesFor(complete)).not.toContain("R003");
+  });
+
+  describe("quality regressions", () => {
+    it("B: detailed password reset flags no documented recovery, expiry, reuse, length, or outcome", () => {
+      const rules = rulesFor(detailedReset);
+      for (const id of ["R004", "R005", "R006", "R008", "R010"]) expect(rules).not.toContain(id);
+    });
+
+    it("C: CSV export treats metrics as outputs, sees observable outcomes, and shows no password warnings", () => {
+      const findings = analyzePrd(csvExport).findings;
+      const rules = findings.map(({ ruleId }) => ruleId);
+      expect(rules).not.toContain("R005");
+      expect(rules).not.toContain("R010");
+      expect(rules).not.toContain("R008");
+      expect(findings.some(({ description }) => /password/i.test(description))).toBe(false);
+      const export004 = findings.find(({ ruleId }) => ruleId === "R004");
+      if (export004) {
+        expect(export004.severity).not.toBe("high");
+        expect(export004.description).toMatch(/generating or downloading/);
+      }
+    });
+
+    it("F: still flags R004 high when an action has no failure behavior at all", () => {
+      const finding = analyzePrd(validInput({ targetUsers: "Sales managers", prdContent: "The sales manager can export the monthly report as a CSV file that includes region totals." })).findings.find(({ ruleId }) => ruleId === "R004");
+      expect(finding?.severity).toBe("high");
+    });
+
+    it("R010 stays low severity", () => {
+      expect(analyzePrd(validInput()).findings.find(({ ruleId }) => ruleId === "R010")?.severity).toBe("low");
+    });
+
+    it("G: every evidence quote appears verbatim in the submitted fields, with no duplicate rules", () => {
+      for (const input of [detailedReset, csvExport, validInput({ prdContent: "Users can request a password reset. It should be easy. If the email is invalid. The user can export the data. Passwords must be at least 12 characters and no more than 8 characters." })]) {
+        const text = Object.values(input).join("\n");
+        const findings = analyzePrd(input).findings;
+        for (const { evidence } of findings) if (evidence) expect(text).toContain(evidence);
+        expect(new Set(findings.map(({ ruleId }) => ruleId)).size).toBe(findings.length);
+      }
+    });
   });
 });

@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep PRD form validation in a shared pure module called by the client UI and unit tests; mirror its constraints server-side when an analysis backend is added, so this frontend-only milestone needs no server endpoint.

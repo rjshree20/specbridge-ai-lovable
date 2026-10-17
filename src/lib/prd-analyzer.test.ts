@@ -80,7 +80,7 @@ describe("deterministic PRD analysis", () => {
   it("suppresses missing detail when target audience, failure, and successful outcome are specified", () => {
     const input = validInput({
       targetUsers: "Registered customers",
-      prdContent: "Registered customers submit the request form. If submission fails, show an error and preserve entered values. On success, the system displays a confirmation.",
+      prdContent: "Registered customers submit the request form. The form validates required fields. If submission fails, show an error and preserve entered values. On success, the system displays a confirmation.",
       acceptanceCriteria: "Given a registered customer, when the form is submitted, then confirmation is displayed.",
     });
     const rules = rulesFor(input);

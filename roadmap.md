@@ -3,4 +3,6 @@
 - [x] Build responsive workspace, PRD form, empty results view, and theme toggle.
 - [x] Add form validation and boundary tests for required fields and PRD length.
 - [x] Verify the mobile and desktop form flows and current preview build.
-- [ ] Later: server-side validation, deterministic analyzer, AI, persistence, and protected admin access.
+## Deferred to later phases by scope
+
+- Server-side validation, deterministic analyzer, AI integration, persistence, and protected admin access.

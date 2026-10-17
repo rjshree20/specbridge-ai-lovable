@@ -288,7 +288,6 @@ function SpecBridgeWorkspace() {
                         value={values.prdContent}
                         onChange={(event) => updateField("prdContent", event.target.value)}
                         placeholder="Paste the product requirements for this feature here…"
-                        maxLength={20_000}
                         aria-invalid={Boolean(errors.prdContent)}
                         aria-describedby={errors.prdContent ? "prdContent-error prdContent-hint" : "prdContent-hint"}
                         className={`min-h-56 resize-y leading-6 ${errors.prdContent ? "border-destructive focus-visible:ring-destructive" : ""}`}

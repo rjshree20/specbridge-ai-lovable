@@ -19,6 +19,7 @@ import { AnalysisResults } from "@/components/specbridge/analysis-results";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { analyzePrd, type PrdAnalysis } from "@/lib/prd-analyzer";
 import {
   initialPrdFormValues,
   validatePrdForm,
@@ -51,7 +52,8 @@ export const Route = createFileRoute("/")({
 function SpecBridgeWorkspace() {
   const [values, setValues] = useState<PrdFormValues>({ ...initialPrdFormValues });
   const [errors, setErrors] = useState<PrdFieldErrors>({});
-  const [submitted, setSubmitted] = useState(false);
+  const [analysis, setAnalysis] = useState<PrdAnalysis | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const prdLength = values.prdContent.length;
 
@@ -63,20 +65,23 @@ function SpecBridgeWorkspace() {
       delete next[field];
       return next;
     });
-    setSubmitted(false);
+    setAnalysis(null);
+    setAnalysisError(null);
   }
 
   function clearForm() {
     setValues({ ...initialPrdFormValues });
     setErrors({});
-    setSubmitted(false);
+    setAnalysis(null);
+    setAnalysisError(null);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationErrors = validatePrdForm(values);
     setErrors(validationErrors);
-    setSubmitted(false);
+    setAnalysis(null);
+    setAnalysisError(null);
 
     if (Object.keys(validationErrors).length > 0) {
       const firstInvalid = Object.keys(validationErrors)[0];
@@ -84,7 +89,11 @@ function SpecBridgeWorkspace() {
       return;
     }
 
-    setSubmitted(true);
+    try {
+      setAnalysis(analyzePrd(values));
+    } catch {
+      setAnalysisError("The PRD could not be reviewed. Please try again after checking the requirements.");
+    }
   }
 
   const fields = [
@@ -215,12 +224,12 @@ function SpecBridgeWorkspace() {
                 </div>
 
                 <form className="space-y-5 p-4 sm:p-6" onSubmit={handleSubmit} noValidate>
-                  {submitted && (
+                  {analysis && (
                     <div className="flex items-start gap-2.5 border border-primary/30 bg-secondary px-3 py-3 text-sm text-secondary-foreground" role="status">
                       <Check className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                       <p>
-                        <strong className="font-semibold">Your PRD passed validation.</strong>{" "}
-                        Analysis is not connected yet, so no findings have been generated.
+                        <strong className="font-semibold">Your PRD was reviewed against 10 deterministic rules.</strong>{" "}
+                        {analysis.findings.length} potential {analysis.findings.length === 1 ? "gap" : "gaps"} to review; findings are not confirmed defects.
                       </p>
                     </div>
                   )}
@@ -330,7 +339,7 @@ function SpecBridgeWorkspace() {
               </section>
 
               <aside className="min-w-0 border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0" aria-label="PRD analysis results">
-                <AnalysisResults findings={[]} />
+                <AnalysisResults analysis={analysis} error={analysisError} />
               </aside>
             </div>
 

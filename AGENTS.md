@@ -10,3 +10,4 @@
 <!-- LOVABLE:END -->
 
 - Keep PRD form validation in a shared pure module called by the client UI and unit tests; mirror its constraints server-side when an analysis backend is added, so this frontend-only milestone needs no server endpoint.
+- Keep deterministic PRD analysis in a reusable pure TypeScript module called by the browser UI and unit tests; it stays client-side until a server analysis endpoint is explicitly introduced, so no network or backend dependency is required for this milestone.

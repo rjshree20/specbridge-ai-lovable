@@ -5,6 +5,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { AiReviewResults, type AiReviewState } from "@/components/specbridge/ai-review-results";
 import { AI_REVIEW_UNAVAILABLE_MESSAGE, type AiReviewErrorCode } from "@/lib/ai-review";
 import { reviewPrdWithAi } from "@/lib/ai-review.functions";
+import { savePrdAnalysis, fetchAnalysisHistory, fetchSavedAnalysis, fetchDashboard } from "@/lib/analysis-history.functions";
+import type { HistoryEntry, DashboardSummary } from "@/lib/analysis-history.server";
 import {
   ArrowRight,
   Check,
@@ -68,8 +70,45 @@ function SpecBridgeWorkspace() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [aiState, setAiState] = useState<AiReviewState>({ status: "idle" });
   const [darkMode, setDarkMode] = useState(false);
+  const [view, setView] = useState<"new" | "history" | "dashboard">("new");
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
+  const [storageMessage, setStorageMessage] = useState<string | null>(null);
   const requestRef = useRef(0);
   const reviewWithAi = useServerFn(reviewPrdWithAi);
+  const saveAnalysis = useServerFn(savePrdAnalysis);
+  const loadHistory = useServerFn(fetchAnalysisHistory);
+  const loadSaved = useServerFn(fetchSavedAnalysis);
+  const loadDashboard = useServerFn(fetchDashboard);
+
+  async function showHistory() {
+    setView("history");
+    setStorageMessage(null);
+    try { setHistory(await loadHistory()); }
+    catch { setStorageMessage("Analysis history could not be loaded. Check database storage configuration."); }
+  }
+
+  async function showDashboard() {
+    setView("dashboard");
+    setStorageMessage(null);
+    try { setDashboard(await loadDashboard()); }
+    catch { setStorageMessage("Dashboard could not be loaded. Check database storage configuration."); }
+  }
+
+  async function openSaved(id: string) {
+    try {
+      const saved = await loadSaved({ data: { id } });
+      if (!saved) { setStorageMessage("This analysis was not found."); return; }
+      requestRef.current++;
+      setValues(saved.values);
+      setErrors({});
+      setAnalysis(saved.analysis);
+      setAnalysisError(null);
+      setAiState(saved.aiReview ? { status: "completed", review: saved.aiReview } : { status: "idle" });
+      setStorageMessage(null);
+      setView("new");
+    } catch { setStorageMessage("Could not open this saved analysis."); }
+  }
   const prdLength = values.prdContent.length;
   const aiPending = aiState.status === "pending";
 
@@ -103,6 +142,7 @@ function SpecBridgeWorkspace() {
     const validationErrors = validatePrdForm(values);
     setErrors(validationErrors);
     resetResults();
+    setStorageMessage(null);
 
     if (Object.keys(validationErrors).length > 0) {
       const firstInvalid = Object.keys(validationErrors)[0];
@@ -130,7 +170,14 @@ function SpecBridgeWorkspace() {
     } catch {
       next = { status: "unavailable", message: AI_REVIEW_UNAVAILABLE_MESSAGE };
     }
-    if (requestRef.current === requestId) setAiState(next);
+    if (requestRef.current !== requestId) return;
+    setAiState(next);
+    try {
+      await saveAnalysis({ data: { values, aiReview: next.status === "completed" ? next.review : null } });
+      if (requestRef.current === requestId) setStorageMessage("Analysis saved to history.");
+    } catch {
+      if (requestRef.current === requestId) setStorageMessage("Analysis completed, but could not be saved. Check database storage configuration.");
+    }
   }
 
   const fields = [
@@ -166,20 +213,18 @@ function SpecBridgeWorkspace() {
 
           <div className="workspace-nav-label">Workspace</div>
           <nav className="workspace-nav" aria-label="Workspace">
-            <a className="workspace-nav-item workspace-nav-active" href="#main-content" aria-current="page">
+            <button type="button" className={`workspace-nav-item w-full text-left ${view === "new" ? "workspace-nav-active" : ""}`} onClick={() => setView("new")}>
               <ClipboardList size={17} aria-hidden="true" />
               <span>New Analysis</span>
-            </a>
-            <span className="workspace-nav-item workspace-nav-disabled" aria-disabled="true">
+            </button>
+            <button type="button" className={`workspace-nav-item w-full text-left ${view === "history" ? "workspace-nav-active" : ""}`} onClick={showHistory}>
               <FileText size={17} aria-hidden="true" />
               <span>Analysis History</span>
-              <span className="workspace-soon">Coming soon</span>
-            </span>
-            <span className="workspace-nav-item workspace-nav-disabled" aria-disabled="true">
+            </button>
+            <button type="button" className={`workspace-nav-item w-full text-left ${view === "dashboard" ? "workspace-nav-active" : ""}`} onClick={showDashboard}>
               <LayoutDashboard size={17} aria-hidden="true" />
               <span>Admin Dashboard</span>
-              <span className="workspace-soon">Coming soon</span>
-            </span>
+            </button>
           </nav>
 
           <div className="workspace-sidebar-bottom">
@@ -206,7 +251,7 @@ function SpecBridgeWorkspace() {
             <nav className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground" aria-label="Breadcrumb">
               <span>Workspace</span>
               <ChevronRight size={13} aria-hidden="true" />
-              <span className="truncate font-medium text-foreground">New Analysis</span>
+              <span className="truncate font-medium text-foreground">{view === "new" ? "New Analysis" : view === "history" ? "Analysis History" : "Admin Dashboard"}</span>
             </nav>
             <div className="flex shrink-0 items-center gap-2 sm:gap-4">
               <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
@@ -243,7 +288,36 @@ function SpecBridgeWorkspace() {
               </div>
             </section>
 
-            <div className="workspace-grid">
+            {storageMessage && <p role="status" className="mb-4 rounded-md border border-border bg-card px-4 py-3 text-sm">{storageMessage}</p>}
+            {view === "history" && (
+              <section className="rounded-md border border-border bg-card p-5" aria-label="Analysis History">
+                <h2 className="mb-4 text-xl font-semibold">Saved analyses</h2>
+                {history.length === 0 ? <p className="text-sm text-muted-foreground">No saved analyses yet.</p> : (
+                  <div className="space-y-2">{history.map((entry) => (
+                    <button key={entry.id} type="button" onClick={() => openSaved(entry.id)} className="flex w-full items-center justify-between gap-4 rounded border border-border px-4 py-3 text-left hover:bg-secondary">
+                      <span><strong className="block text-sm">{entry.featureTitle}</strong><span className="text-xs text-muted-foreground">{entry.productName || "Unspecified product"} · {new Date(entry.createdAt).toLocaleString()}</span></span>
+                      <span className="shrink-0 text-xs">{entry.gapCount} candidates <ChevronRight className="inline size-4" /></span>
+                    </button>
+                  ))}</div>
+                )}
+              </section>
+            )}
+            {view === "dashboard" && (
+              <section className="rounded-md border border-border bg-card p-5" aria-label="Admin Dashboard">
+                <h2 className="mb-4 text-xl font-semibold">Analysis overview</h2>
+                {dashboard ? (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="rounded border border-border p-4"><p className="text-sm text-muted-foreground">Saved analyses</p><strong className="text-3xl">{dashboard.totalAnalyses}</strong></div>
+                    <div className="rounded border border-border p-4"><p className="text-sm text-muted-foreground">Rule-based candidates</p><strong className="text-3xl">{dashboard.totalGaps}</strong></div>
+                    <div className="rounded border border-border p-4"><p className="text-sm text-muted-foreground">Ambiguity</p><strong className="text-3xl">{dashboard.byCategory.ambiguity}</strong></div>
+                    <div className="rounded border border-border p-4"><p className="text-sm text-muted-foreground">Missing logic</p><strong className="text-3xl">{dashboard.byCategory.missing_logic}</strong></div>
+                    <div className="rounded border border-border p-4"><p className="text-sm text-muted-foreground">Undefined inputs</p><strong className="text-3xl">{dashboard.byCategory.undefined_inputs}</strong></div>
+                  </div>
+                ) : <p className="text-sm text-muted-foreground">Loading dashboard...</p>}
+                <p className="mt-4 text-xs text-muted-foreground">Counts refer to rule-based candidates, not confirmed defects.</p>
+              </section>
+            )}
+            {view === "new" && <div className="workspace-grid">
               <section className="min-w-0 overflow-hidden rounded-md border border-border bg-card" aria-labelledby="form-title">
                 <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-6">
                   <div className="flex min-w-0 items-center gap-3">
@@ -379,14 +453,14 @@ function SpecBridgeWorkspace() {
                 <AnalysisResults analysis={analysis} error={analysisError} />
                 <AiReviewResults state={aiState} />
               </aside>
-            </div>
+            </div>}
 
             <footer className="mt-9 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border pt-4 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <ShieldCheck size={14} aria-hidden="true" />
                 A structured input checkpoint for product teams
               </span>
-              <span>No reports are saved in this milestone</span>
+              <span>Saved analyses are available under Analysis History</span>
             </footer>
           </main>
         </div>

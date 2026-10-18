@@ -1,5 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+
+import { AiReviewResults, type AiReviewState } from "@/components/specbridge/ai-review-results";
+import { AI_REVIEW_UNAVAILABLE_MESSAGE, type AiReviewErrorCode } from "@/lib/ai-review";
+import { reviewPrdWithAi } from "@/lib/ai-review.functions";
 import {
   ArrowRight,
   Check,
@@ -49,13 +54,31 @@ export const Route = createFileRoute("/")({
   component: SpecBridgeWorkspace,
 });
 
+const aiFailureDetail: Partial<Record<AiReviewErrorCode, string>> = {
+  rate_limited: "Too many requests right now — please wait a minute and try again.",
+  credits_exhausted: "AI credits for this workspace are used up.",
+  timeout: "The AI took too long to respond.",
+  invalid_input: "The server could not accept this PRD for AI review.",
+};
+
 function SpecBridgeWorkspace() {
   const [values, setValues] = useState<PrdFormValues>({ ...initialPrdFormValues });
   const [errors, setErrors] = useState<PrdFieldErrors>({});
   const [analysis, setAnalysis] = useState<PrdAnalysis | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [aiState, setAiState] = useState<AiReviewState>({ status: "idle" });
   const [darkMode, setDarkMode] = useState(false);
+  const requestRef = useRef(0);
+  const reviewWithAi = useServerFn(reviewPrdWithAi);
   const prdLength = values.prdContent.length;
+  const aiPending = aiState.status === "pending";
+
+  function resetResults() {
+    requestRef.current++;
+    setAnalysis(null);
+    setAnalysisError(null);
+    setAiState({ status: "idle" });
+  }
 
   function updateField(field: keyof PrdFormValues, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -65,23 +88,21 @@ function SpecBridgeWorkspace() {
       delete next[field];
       return next;
     });
-    setAnalysis(null);
-    setAnalysisError(null);
+    resetResults();
   }
 
   function clearForm() {
     setValues({ ...initialPrdFormValues });
     setErrors({});
-    setAnalysis(null);
-    setAnalysisError(null);
+    resetResults();
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (aiPending) return;
     const validationErrors = validatePrdForm(values);
     setErrors(validationErrors);
-    setAnalysis(null);
-    setAnalysisError(null);
+    resetResults();
 
     if (Object.keys(validationErrors).length > 0) {
       const firstInvalid = Object.keys(validationErrors)[0];
@@ -89,11 +110,27 @@ function SpecBridgeWorkspace() {
       return;
     }
 
+    let result: PrdAnalysis;
     try {
-      setAnalysis(analyzePrd(values));
+      result = analyzePrd(values);
+      setAnalysis(result);
     } catch {
       setAnalysisError("The PRD could not be reviewed. Please try again after checking the requirements.");
+      return;
     }
+
+    const requestId = requestRef.current;
+    setAiState({ status: "pending" });
+    let next: AiReviewState;
+    try {
+      const response = await reviewWithAi({ data: { values, clientFindingIds: result.findings.map((f) => f.id) } });
+      next = response.ok
+        ? { status: "completed", review: response.review }
+        : { status: "unavailable", message: AI_REVIEW_UNAVAILABLE_MESSAGE, detail: aiFailureDetail[response.code] };
+    } catch {
+      next = { status: "unavailable", message: AI_REVIEW_UNAVAILABLE_MESSAGE };
+    }
+    if (requestRef.current === requestId) setAiState(next);
   }
 
   const fields = [

@@ -377,6 +377,7 @@ function SpecBridgeWorkspace() {
 
               <aside className="min-w-0 border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0" aria-label="PRD analysis results">
                 <AnalysisResults analysis={analysis} error={analysisError} />
+                <AiReviewResults state={aiState} />
               </aside>
             </div>
 
